@@ -4,9 +4,6 @@ use std::io::{self,BufRead,BufReader, BufWriter};
 use std::collections::HashMap;
 use std::io::prelude::*;
 
-
-
-// [TODO] Add the constants of the predefined symbols (ask KBD, SCREEN, etc.)
 enum Instruction {
     AInstruction(String), // -> Addressing instruction
     CInstruction(String, String, String), // -> Computation instruction
@@ -91,8 +88,6 @@ fn main() -> io::Result<()> {
             writer.write_all("\n".as_bytes())?;
         }
     }
-
-
     Ok(())
 }
 

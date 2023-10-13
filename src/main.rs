@@ -1,8 +1,12 @@
 use std::env;
 use std::fs::File;
-use std::io::{self,BufRead,BufReader};
+use std::io::{self,BufRead,BufReader, BufWriter};
 use std::collections::HashMap;
+use std::io::prelude::*;
 
+
+
+// [TODO] Add the constants of the predefined symbols (ask KBD, SCREEN, etc.)
 enum Instruction {
     AInstruction(String), // -> Addressing instruction
     CInstruction(String, String, String), // -> Computation instruction
@@ -22,14 +26,16 @@ fn main() -> io::Result<()> {
 
     let file_name = &args[1];
     let file = File::open(file_name)?;
-    let reader = BufReader::new(file);
+    let reader: BufReader<File> = BufReader::new(file);
 
     let mut label_table: HashMap<String, u16> = HashMap::new();
 
     let instructions_copy: Vec<Instruction> =  reader.lines()
         .map(|line| line.unwrap().trim().to_string())
-        .filter(|line| !line.is_empty() && !line.starts_with("//")).map(|line| parser(line)).collect();
-    // First pass to add labels to the symbol table
+        .filter(|line| !line.is_empty() && !line.starts_with("//"))
+        .map(|line| parser(line))
+        .collect();
+
     let mut instruction_count = 0;
     for instruction in instructions_copy {
         match instruction {
@@ -45,17 +51,12 @@ fn main() -> io::Result<()> {
 
     let mut symbol_table: HashMap<String, u16> = HashMap::new();
 
-    // For each line, trim the line, remove empty lines and comments
-    let lines = reader.lines()
+    let instructions = reader.lines()
         .map(|line| line.unwrap().trim().to_string())
-        .filter(|line| !line.is_empty() && !line.starts_with("//"));
-
-    let instructions = lines.map(|line| parser(line));
-
+        .filter(|line| !line.is_empty() && !line.starts_with("//"))
+        .map(|line| parser(line));
     
-    let mut binary_instructions: Vec<String> = Vec::new();
-
-    
+    let mut binary_instructions: Vec<String> = Vec::new();    
     
     for instruction in instructions {
         match instruction {
@@ -71,24 +72,43 @@ fn main() -> io::Result<()> {
         binary_instructions.push(binary_instruction);
     }
     
-    // Print the binary instructions
     for binary in &binary_instructions {
         if !binary.is_empty() {
             println!("{}", binary);
         }
     }
 
+    // Save the file as filename.hack
+    let output_file_name = String::from_iter([file_name.clone()
+    .trim_end_matches("asm")
+    .to_string(), "hack".to_string()]);
+
+    let  output_file = File::create(output_file_name)?;
+    let mut writer = BufWriter::new(output_file);
+    for binary in &binary_instructions {
+        if !binary.is_empty() {
+            writer.write_all(binary.as_bytes())?;
+            writer.write_all("\n".as_bytes())?;
+        }
+    }
+
+
     Ok(())
 }
 
-
-
 fn parser(line: String) -> Instruction {
     if line.starts_with("@") {
-        Instruction::AInstruction(String::from(line))
+        Instruction::AInstruction(
+            String::from(
+                line.trim_start_matches('@')
+            ))
     } else if line.starts_with("(") && line.ends_with(")") {
-        let variable_name = line.trim_start_matches("(").trim_end_matches(")");
-        Instruction::LInstruction(String::from(variable_name))
+        Instruction::LInstruction(
+            String::from(
+                line
+                .trim_start_matches("(")
+                .trim_end_matches(")")
+            ))
     } else {
         let mut copy: &str = & line.clone();
         let mut jump = "";
@@ -168,18 +188,42 @@ fn to_binary(instruction: &Instruction, symbol_table: &mut HashMap<String, u16>,
         ("JMP", "111"),
     ]);
 
+    let predefined_symbols_table: HashMap<&str, u16> = HashMap::from([
+        ("SP", 0),
+        ("LCL", 1),
+        ("ARG", 2),
+        ("THIS", 3),
+        ("THAT", 4),
+        ("R0", 0),
+        ("R1", 1),
+        ("R2", 2),
+        ("R3", 3),
+        ("R4", 4),
+        ("R5", 5),
+        ("R6", 6),
+        ("R7", 7),
+        ("R8", 8),
+        ("R9", 9),
+        ("R10", 10),
+        ("R11", 11),
+        ("R12", 12),
+        ("R13", 13),
+        ("R14", 14),
+        ("R15", 15),
+        ("SCREEN", 16384),
+        ("KBD", 24576),
+    ]);
+
     match instruction {
         Instruction::AInstruction(value) => {
-            let value = value.trim_start_matches('@');
             if let Ok(num) = value.parse::<u16>() {
-                // A-instruction with a numeric value
                 format!("0{:015b}", num)
             } else {
-                if label_table.contains_key(value){
+                if predefined_symbols_table.contains_key(value.as_str()){
+                    format!("0{:015b}", predefined_symbols_table[value.as_str()])
+                } else if label_table.contains_key(value){
                     format!("0{:015b}", label_table[value])
-                }
-                // A-instruction with a symbol
-                else if symbol_table.contains_key(value) {
+                } else if symbol_table.contains_key(value) {
                     format!("0{:015b}", symbol_table[value])
                 } else {
                     let address = VAR_START + symbol_table.len() as u16;
@@ -199,6 +243,6 @@ fn to_binary(instruction: &Instruction, symbol_table: &mut HashMap<String, u16>,
         }
         Instruction::LInstruction(_) => {
             "".to_string()
-        }, // Labels have no binary representation
+        }, 
     }
 }

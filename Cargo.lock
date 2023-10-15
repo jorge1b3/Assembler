@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "text_parse"
-version = "0.1.0"
+name = "assembler_nan2tetris"
+version = "1.5.0"

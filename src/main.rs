@@ -29,7 +29,7 @@ fn main() -> io::Result<()> {
     let file = File::open(file_name)?;
     let reader: BufReader<File> = BufReader::new(file);
 
-    let mut symbol_table: HashMap<String, u16> = HashMap::new();
+    
 
     let instructions: Vec<Instruction> = reader
         .lines()
@@ -40,24 +40,23 @@ fn main() -> io::Result<()> {
 
     let mut num_instructions = 0;
 
-    let labels: Vec<(&Instruction, u16)> = instructions
-        .iter()
-        .map(|instruction| match instruction {
-            Instruction::Labeling(_) => (instruction, num_instructions),
-            _ => {
-                num_instructions += 1;
-                (instruction, num_instructions)
-            }
-        })
-        .filter(|(instruction, _)| matches!(instruction, Instruction::Labeling(_)))
-        .collect();
-
-    let label_table: HashMap<String, &u16> = HashMap::from_iter(
-        labels
+    let label_table: HashMap<String, u16> = HashMap::from_iter(
+        instructions
             .iter()
-            .map(|(instruction, number)| (instruction_to_string(instruction), number)),
+            .map(|instruction| match instruction {
+                Instruction::Labeling(_) => (instruction, num_instructions),
+                _ => {
+                    num_instructions += 1;
+                    (instruction, num_instructions)
+                }
+            })
+            .filter(|(instruction, _)| matches!(instruction, Instruction::Labeling(_)))
+            .map(|(instruction, number)| (instruction_to_string(instruction), number))
+            .collect::<Vec<(String, u16)>>(),
     );
 
+    let mut symbol_table: HashMap<String, u16> = HashMap::new();
+    
     let binary_instructions: Vec<String> = instructions
         .iter()
         .filter(|instruction| !matches!(instruction, Instruction::Labeling(_)))
@@ -128,7 +127,7 @@ fn parser(line: String) -> Instruction {
 fn to_binary(
     instruction: &Instruction,
     symbol_table: &mut HashMap<String, u16>,
-    label_table: &HashMap<String, &u16>,
+    label_table: &HashMap<String, u16>,
 ) -> String {
     let comp_table: HashMap<&str, &str> = HashMap::from([
         ("0", "0101010"),

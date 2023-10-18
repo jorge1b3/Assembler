@@ -5,9 +5,9 @@ use std::io::prelude::*;
 use std::io::{self, BufReader, BufWriter};
 
 enum Instruction {
-    A(String),
-    C(String, String, String),
-    L(String),
+    Addressing(String),
+    Computing(String, String, String),
+    Labeling(String),
 }
 
 const VARIABLE_ADDRESS_START: u16 = 16;
@@ -29,7 +29,6 @@ fn main() -> io::Result<()> {
     let file = File::open(file_name)?;
     let reader: BufReader<File> = BufReader::new(file);
 
-    let mut label_table: HashMap<String, u16> = HashMap::new();
     let mut symbol_table: HashMap<String, u16> = HashMap::new();
 
     let instructions: Vec<Instruction> = reader
@@ -41,55 +40,64 @@ fn main() -> io::Result<()> {
 
     let mut num_instructions = 0;
 
-    instructions.iter().for_each(|instruction| {
-        set_label_table(&mut label_table, &mut num_instructions, instruction)
-    });
+    let labels: Vec<(&Instruction, u16)> = instructions
+        .iter()
+        .map(|instruction| match instruction {
+            Instruction::Labeling(_) => (instruction, num_instructions),
+            _ => {
+                num_instructions += 1;
+                (instruction, num_instructions)
+            }
+        })
+        .filter(|(instruction, _)| matches!(instruction, Instruction::Labeling(_)))
+        .collect();
 
-    let label_table = label_table;
+    let label_table: HashMap<String, &u16> = HashMap::from_iter(
+        labels
+            .iter()
+            .map(|(instruction, number)| (instruction_to_string(instruction), number)),
+    );
 
     let binary_instructions: Vec<String> = instructions
         .iter()
-        .filter(|instruction| !matches!(instruction, Instruction::L(_)))
-        .map(|instruction| to_binary(instruction, &mut symbol_table, &label_table))
+        .filter(|instruction| !matches!(instruction, Instruction::Labeling(_)))
+        .map(|instruction: &Instruction| to_binary(instruction, &mut symbol_table, &label_table))
         .filter(|line| !line.is_empty())
         .collect();
 
     binary_instructions
         .iter()
-        .filter(|binary| !binary.is_empty())
         .for_each(|binary| println!("{}", binary));
 
     let output_file_name = file_name.replace("asm", "hack");
     let output_file = File::create(output_file_name)?;
     let mut writer = BufWriter::new(output_file);
-    binary_instructions
-        .iter()
-        .filter(|line| !line.is_empty())
-        .for_each(|line| {
-            let _ = writer.write_all(line.as_bytes());
-            let _ = writer.write_all("\n".as_bytes());
-        });
+    binary_instructions.iter().for_each(|line| {
+        let _ = writer.write_all(line.as_bytes());
+        let _ = writer.write_all("\n".as_bytes());
+    });
     Ok(())
 }
 
-fn set_label_table(
-    label_table: &mut HashMap<String, u16>,
-    num_instructions: &mut u16,
-    instruction: &Instruction,
-) {
+fn instruction_to_string(instruction: &Instruction) -> String {
     match instruction {
-        Instruction::L(value) => {
-            label_table.insert(value.clone(), *num_instructions);
+        Instruction::Labeling(val) => val.clone(), // Clone the &String into a new String
+        Instruction::Addressing(val) => val.clone(), // Clone the &String into a new String
+        Instruction::Computing(a, b, c) => {
+            let mut result = String::new();
+            result.push_str(a);
+            result.push_str(b);
+            result.push_str(c);
+            result
         }
-        _ => *num_instructions += 1,
     }
 }
 
 fn parser(line: String) -> Instruction {
     if line.starts_with('@') {
-        Instruction::A(String::from(line.trim_start_matches('@')))
+        Instruction::Addressing(String::from(line.trim_start_matches('@')))
     } else if line.starts_with('(') && line.ends_with(')') {
-        Instruction::L(String::from(
+        Instruction::Labeling(String::from(
             line.trim_start_matches('(').trim_end_matches(')'),
         ))
     } else {
@@ -113,14 +121,14 @@ fn parser(line: String) -> Instruction {
             }
             false => copy,
         };
-        Instruction::C(String::from(dest), String::from(comp), String::from(jump))
+        Instruction::Computing(String::from(dest), String::from(comp), String::from(jump))
     }
 }
 
 fn to_binary(
     instruction: &Instruction,
     symbol_table: &mut HashMap<String, u16>,
-    label_table: &HashMap<String, u16>,
+    label_table: &HashMap<String, &u16>,
 ) -> String {
     let comp_table: HashMap<&str, &str> = HashMap::from([
         ("0", "0101010"),
@@ -202,7 +210,7 @@ fn to_binary(
     ]);
 
     match instruction {
-        Instruction::A(name) => {
+        Instruction::Addressing(name) => {
             if let Ok(number) = name.parse::<u16>() {
                 format!("0{:015b}", number)
             } else if default_symbols_table.contains_key(name.as_str()) {
@@ -217,7 +225,7 @@ fn to_binary(
                 format!("0{:015b}", new_address)
             }
         }
-        Instruction::C(dest, comp, jump) => {
+        Instruction::Computing(dest, comp, jump) => {
             let comp_binary = comp_table.get::<str>(comp.as_str()).unwrap_or(&"0000000");
             let dest_binary = dest_table.get::<str>(dest.as_str()).unwrap_or(&"000");
             let jump_binary = jump_table.get::<str>(jump.as_str()).unwrap_or(&"000");

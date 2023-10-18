@@ -1,5 +1,5 @@
 [package]
-name = "assembler_nan2tetris"
+name = "assembler"
 version = "1.5.0"
 edition = "2021"
 authors = ["Jorge Garcia"]

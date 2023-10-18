@@ -64,9 +64,9 @@ fn main() -> io::Result<()> {
         .filter(|line| !line.is_empty())
         .collect();
 
-    binary_instructions
-        .iter()
-        .for_each(|binary| println!("{}", binary));
+    for binary in binary_instructions.clone() {
+        println!("{}",binary);
+    }
 
     let output_file_name = file_name.replace("asm", "hack");
     let output_file = File::create(output_file_name)?;

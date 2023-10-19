@@ -1,13 +1,31 @@
 use std::collections::HashMap;
 use std::env;
+use std::fmt;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, BufReader, BufWriter};
 
+#[derive(Debug, Clone)]
 enum Instruction {
     Addressing(String),
     Computing(String, String, String),
     Labeling(String),
+}
+
+impl fmt::Display for Instruction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Instruction::Computing(dest, cmp, jmp) => {
+                let mut a = String::new();
+                a.push_str(dest.clone().as_str());
+                a.push_str(cmp.clone().as_str());
+                a.push_str(jmp.clone().as_str());
+                write!(f, "{}", a)
+            }
+            Instruction::Addressing(value) => write!(f, "{}", value.clone()),
+            Instruction::Labeling(value) => write!(f, "{}", value.clone()),
+        }
+    }
 }
 
 const VARIABLE_ADDRESS_START: u16 = 16;
@@ -29,8 +47,6 @@ fn main() -> io::Result<()> {
     let file = File::open(file_name)?;
     let reader: BufReader<File> = BufReader::new(file);
 
-    
-
     let instructions: Vec<Instruction> = reader
         .lines()
         .map(|line| line.unwrap().trim().to_string())
@@ -51,22 +67,18 @@ fn main() -> io::Result<()> {
                 }
             })
             .filter(|(instruction, _)| matches!(instruction, Instruction::Labeling(_)))
-            .map(|(instruction, number)| (instruction_to_string(instruction), number))
+            .map(|(instruction, number)| (format!("{}", instruction), number))
             .collect::<Vec<(String, u16)>>(),
     );
 
     let mut symbol_table: HashMap<String, u16> = HashMap::new();
-    
+
     let binary_instructions: Vec<String> = instructions
         .iter()
         .filter(|instruction| !matches!(instruction, Instruction::Labeling(_)))
         .map(|instruction: &Instruction| to_binary(instruction, &mut symbol_table, &label_table))
         .filter(|line| !line.is_empty())
         .collect();
-
-    for binary in binary_instructions.clone() {
-        println!("{}",binary);
-    }
 
     let output_file_name = file_name.replace("asm", "hack");
     let output_file = File::create(output_file_name)?;
@@ -76,20 +88,6 @@ fn main() -> io::Result<()> {
         let _ = writer.write_all("\n".as_bytes());
     });
     Ok(())
-}
-
-fn instruction_to_string(instruction: &Instruction) -> String {
-    match instruction {
-        Instruction::Labeling(val) => val.clone(), // Clone the &String into a new String
-        Instruction::Addressing(val) => val.clone(), // Clone the &String into a new String
-        Instruction::Computing(a, b, c) => {
-            let mut result = String::new();
-            result.push_str(a);
-            result.push_str(b);
-            result.push_str(c);
-            result
-        }
-    }
 }
 
 fn parser(line: String) -> Instruction {

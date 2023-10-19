@@ -211,13 +211,12 @@ fn to_binary(
         Instruction::Addressing(name) => {
             if let Ok(number) = name.parse::<u16>() {
                 if number > 32768 {
-                    if let Some(address) = symbol_table.get(name.as_str()) {
-                        format!("0{:015b}", address)
-                    } else {
+                    let address = symbol_table.get(name.as_str()).cloned().unwrap_or_else(|| {
                         let new_address = VARIABLE_ADDRESS_START + symbol_table.len() as u16;
                         symbol_table.insert(name.to_string(), new_address);
-                        format!("0{:015b}", new_address)
-                    }
+                        new_address
+                    });
+                    format!("0{:015b}", address)
                 } else {
                     format!("0{:015b}", number)
                 }

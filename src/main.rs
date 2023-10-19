@@ -210,25 +210,37 @@ fn to_binary(
     match instruction {
         Instruction::Addressing(name) => {
             if let Ok(number) = name.parse::<u16>() {
-                format!("0{:015b}", number)
-            } else if default_symbols_table.contains_key(name.as_str()) {
-                format!("0{:015b}", default_symbols_table[name.as_str()])
-            } else if label_table.contains_key(name) {
-                format!("0{:015b}", label_table[name])
-            } else if symbol_table.contains_key(name) {
-                format!("0{:015b}", symbol_table[name])
+                if number > 32768 {
+                    if let Some(address) = symbol_table.get(name.as_str()) {
+                        format!("0{:015b}", address)
+                    } else {
+                        let new_address = VARIABLE_ADDRESS_START + symbol_table.len() as u16;
+                        symbol_table.insert(name.to_string(), new_address);
+                        format!("0{:015b}", new_address)
+                    }
+                } else {
+                    format!("0{:015b}", number)
+                }
             } else {
-                let new_address = VARIABLE_ADDRESS_START + symbol_table.len() as u16;
-                symbol_table.insert(name.to_string(), new_address);
-                format!("0{:015b}", new_address)
+                let address = default_symbols_table
+                    .get(name.as_str())
+                    .or(label_table.get(name))
+                    .or(symbol_table.get(name))
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        let new_address = VARIABLE_ADDRESS_START + symbol_table.len() as u16;
+                        symbol_table.insert(name.to_string(), new_address);
+                        new_address
+                    });
+                format!("0{:015b}", address)
             }
         }
         Instruction::Computing(dest, comp, jump) => {
-            let comp_binary = comp_table.get::<str>(comp.as_str()).unwrap_or(&"0000000");
-            let dest_binary = dest_table.get::<str>(dest.as_str()).unwrap_or(&"000");
-            let jump_binary = jump_table.get::<str>(jump.as_str()).unwrap_or(&"000");
+            let comp_binary = comp_table.get(comp.as_str()).unwrap_or(&"0000000");
+            let dest_binary = dest_table.get(dest.as_str()).unwrap_or(&"000");
+            let jump_binary = jump_table.get(jump.as_str()).unwrap_or(&"000");
             format!("111{}{}{}", comp_binary, dest_binary, jump_binary)
         }
-        _ => "".to_string(),
+        _ => String::new(),
     }
 }

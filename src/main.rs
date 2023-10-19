@@ -208,8 +208,8 @@ fn to_binary(
     ]);
 
     match instruction {
-        Instruction::Addressing(name) => {
-            if let Ok(number) = name.parse::<u16>() {
+        Instruction::Addressing(name) => match name.parse::<u16>() {
+            Ok(number) => {
                 if number > 32768 {
                     let address = symbol_table.get(name.as_str()).cloned().unwrap_or_else(|| {
                         let new_address = VARIABLE_ADDRESS_START + symbol_table.len() as u16;
@@ -220,7 +220,8 @@ fn to_binary(
                 } else {
                     format!("0{:015b}", number)
                 }
-            } else {
+            }
+            _ => {
                 let address = default_symbols_table
                     .get(name.as_str())
                     .or(label_table.get(name))
@@ -233,7 +234,7 @@ fn to_binary(
                     });
                 format!("0{:015b}", address)
             }
-        }
+        },
         Instruction::Computing(dest, comp, jump) => {
             let comp_binary = comp_table.get(comp.as_str()).unwrap_or(&"0000000");
             let dest_binary = dest_table.get(dest.as_str()).unwrap_or(&"000");

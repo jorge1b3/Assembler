@@ -62,8 +62,9 @@ fn main() -> io::Result<()> {
             .map(|instruction| match instruction {
                 Instruction::Labeling(_) => (instruction, num_instructions),
                 _ => {
+                    let temp = num_instructions;
                     num_instructions += 1;
-                    (instruction, num_instructions)
+                    (instruction, temp)
                 }
             })
             .filter(|(instruction, _)| matches!(instruction, Instruction::Labeling(_)))

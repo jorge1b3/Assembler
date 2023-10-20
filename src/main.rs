@@ -16,19 +16,17 @@ impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Instruction::Computing(dest, cmp, jmp) => {
-                let mut a = String::new();
-                a.push_str(dest.clone().as_str());
-                a.push_str(cmp.clone().as_str());
-                a.push_str(jmp.clone().as_str());
+                let a = format!("{}={};{}", dest, cmp, jmp);
                 write!(f, "{}", a)
             }
-            Instruction::Addressing(value) => write!(f, "{}", value.clone()),
-            Instruction::Labeling(value) => write!(f, "{}", value.clone()),
+            Instruction::Addressing(value) => write!(f, "{}", value),
+            Instruction::Labeling(value) => write!(f, "{}", value),
         }
     }
 }
 
 const VARIABLE_ADDRESS_START: u16 = 16;
+const MAX_ADDRESS: u16 = 32768;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -50,8 +48,7 @@ fn main() -> io::Result<()> {
     let instructions: Vec<Instruction> = reader
         .lines()
         .map(|line| line.unwrap().trim().to_string())
-        .filter(|line| !line.is_empty() && !line.starts_with("//"))
-        .map(parser)
+        .filter_map(parser)
         .collect();
 
     let mut num_instructions = 0;
@@ -59,16 +56,13 @@ fn main() -> io::Result<()> {
     let label_table: HashMap<String, u16> = HashMap::from_iter(
         instructions
             .iter()
-            .map(|instruction| match instruction {
-                Instruction::Labeling(_) => (instruction, num_instructions),
+            .filter_map(|instruction| match instruction {
+                Instruction::Labeling(value) => Some((value.to_string(), num_instructions)),
                 _ => {
-                    let temp = num_instructions;
                     num_instructions += 1;
-                    (instruction, temp)
+                    None
                 }
             })
-            .filter(|(instruction, _)| matches!(instruction, Instruction::Labeling(_)))
-            .map(|(instruction, number)| (format!("{}", instruction), number))
             .collect::<Vec<(String, u16)>>(),
     );
 
@@ -76,50 +70,47 @@ fn main() -> io::Result<()> {
 
     let binary_instructions: Vec<String> = instructions
         .iter()
-        .filter(|instruction| !matches!(instruction, Instruction::Labeling(_)))
-        .map(|instruction: &Instruction| to_binary(instruction, &mut symbol_table, &label_table))
-        .filter(|line| !line.is_empty())
+        .filter_map(|instruction| to_binary(instruction, &mut symbol_table, &label_table))
         .collect();
 
     let output_file_name = file_name.replace("asm", "hack");
     let output_file = File::create(output_file_name)?;
     let mut writer = BufWriter::new(output_file);
-    binary_instructions.iter().for_each(|line| {
+    for line in &binary_instructions {
         let _ = writer.write_all(line.as_bytes());
-        let _ = writer.write_all("\n".as_bytes());
-    });
+        let _ = writer.write_all(b"\n");
+    }
     Ok(())
 }
 
-fn parser(line: String) -> Instruction {
-    if line.starts_with('@') {
-        Instruction::Addressing(String::from(line.trim_start_matches('@')))
+fn parser(line: String) -> Option<Instruction> {
+    if line.starts_with("//") || line.is_empty() {
+        None
+    } else if line.starts_with('@') {
+        Some(Instruction::Addressing(
+            line.trim_start_matches('@').to_string(),
+        ))
     } else if line.starts_with('(') && line.ends_with(')') {
-        Instruction::Labeling(String::from(
-            line.trim_start_matches('(').trim_end_matches(')'),
+        Some(Instruction::Labeling(
+            line.trim_start_matches('(')
+                .trim_end_matches(')')
+                .to_string(),
         ))
     } else {
-        let mut copy: &str = &line.clone();
-        let mut jump = "";
-        let dest = match copy.contains('=') {
-            true => {
-                let mut parts = copy.split('=');
-                let temp = parts.next().unwrap();
-                copy = parts.next().unwrap();
-                temp
-            }
-            false => "",
-        };
-        let comp = match copy.contains(';') {
-            true => {
-                let mut parts = copy.split(';');
-                copy = parts.next().unwrap();
-                jump = parts.next().unwrap();
-                copy
-            }
-            false => copy,
-        };
-        Instruction::Computing(String::from(dest), String::from(comp), String::from(jump))
+        let copy = &line.as_str();
+        let (dest, copy) = copy
+            .split_once('=')
+            .map(|(dst, cp)| (dst, cp))
+            .unwrap_or_else(|| ("", copy));
+        let (comp, jump) = copy
+            .split_once(';')
+            .map(|(cmp, jmp)| (cmp, jmp))
+            .unwrap_or_else(|| (copy, ""));
+        Some(Instruction::Computing(
+            String::from(dest),
+            String::from(comp),
+            String::from(jump),
+        ))
     }
 }
 
@@ -127,7 +118,7 @@ fn to_binary(
     instruction: &Instruction,
     symbol_table: &mut HashMap<String, u16>,
     label_table: &HashMap<String, u16>,
-) -> String {
+) -> Option<String> {
     let comp_table: HashMap<&str, &str> = HashMap::from([
         ("0", "0101010"),
         ("1", "0111111"),
@@ -210,15 +201,15 @@ fn to_binary(
     match instruction {
         Instruction::Addressing(name) => match name.parse::<u16>() {
             Ok(number) => {
-                if number > 32768 {
+                if number > MAX_ADDRESS {
                     let address = symbol_table.get(name.as_str()).cloned().unwrap_or_else(|| {
                         let new_address = VARIABLE_ADDRESS_START + symbol_table.len() as u16;
                         symbol_table.insert(name.to_string(), new_address);
                         new_address
                     });
-                    format!("0{:015b}", address)
+                    Some(format!("0{:015b}", address))
                 } else {
-                    format!("0{:015b}", number)
+                    Some(format!("0{:015b}", number))
                 }
             }
             _ => {
@@ -232,15 +223,15 @@ fn to_binary(
                         symbol_table.insert(name.to_string(), new_address);
                         new_address
                     });
-                format!("0{:015b}", address)
+                Some(format!("0{:015b}", address))
             }
         },
         Instruction::Computing(dest, comp, jump) => {
             let comp_binary = comp_table.get(comp.as_str()).unwrap_or(&"0000000");
             let dest_binary = dest_table.get(dest.as_str()).unwrap_or(&"000");
             let jump_binary = jump_table.get(jump.as_str()).unwrap_or(&"000");
-            format!("111{}{}{}", comp_binary, dest_binary, jump_binary)
+            Some(format!("111{}{}{}", comp_binary, dest_binary, jump_binary))
         }
-        _ => String::new(),
+        _ => None,
     }
 }

@@ -26,39 +26,28 @@ impl fmt::Display for Instruction {
 }
 
 const VARIABLE_ADDRESS_START: u16 = 16;
-const MAX_ADDRESS: u16 = 32768;
+const MAX_ADDRESS: u16 = 32767;
 
 fn main() -> io::Result<()> {
-    let args: Vec<String> = env::args().collect();
+    // Open the input file and get a reader for it
+    let (file_name, reader) = open_file()?;
 
-    if args.len() != 2 {
-        eprintln!("Usage: {} <file_name>", args[0]);
-        std::process::exit(1);
-    }
-
-    if !args[1].ends_with(".asm") {
-        eprintln!("The file {} is not a supporter file", args[1]);
-        std::process::exit(1);
-    }
-
-    let file_name = &args[1];
-    let file = File::open(file_name)?;
-    let reader: BufReader<File> = BufReader::new(file);
-
+    // Parse the lines of the input file into a vector of instructions
     let instructions: Vec<Instruction> = reader
         .lines()
         .map(|line| line.unwrap().trim().to_string())
         .filter_map(parser)
         .collect();
 
+    // Create a label table that maps label names to line numbers
     let mut num_instructions = 0;
-
     let label_table: HashMap<String, u16> = HashMap::from_iter(
         instructions
             .iter()
-            .filter_map(|instruction| match instruction {
-                Instruction::Labeling(value) => Some((value.to_string(), num_instructions)),
-                _ => {
+            .filter_map(|instruction| {
+                if let Instruction::Labeling(value) = instruction {
+                    Some((value.to_string(), num_instructions))
+                } else {
                     num_instructions += 1;
                     None
                 }
@@ -66,13 +55,23 @@ fn main() -> io::Result<()> {
             .collect::<Vec<(String, u16)>>(),
     );
 
+    // Create a symbol table that maps variable names to memory addresses
     let mut symbol_table: HashMap<String, u16> = HashMap::new();
 
+    // Convert the instructions to binary and collect them into a vector
     let binary_instructions: Vec<String> = instructions
         .iter()
         .filter_map(|instruction| to_binary(instruction, &mut symbol_table, &label_table))
         .collect();
 
+    // Save the binary instructions to an output file
+    save_file(file_name, binary_instructions)?;
+
+    // Return a success result
+    Ok(())
+}
+
+fn save_file(file_name: String, binary_instructions: Vec<String>) -> Result<(), io::Error> {
     let output_file_name = file_name.replace("asm", "hack");
     let output_file = File::create(output_file_name)?;
     let mut writer = BufWriter::new(output_file);
@@ -83,19 +82,39 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
+fn open_file() -> Result<(String, BufReader<File>), io::Error> {
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 2 {
+        eprintln!("Usage: {} <file_name>", args[0]);
+        std::process::exit(1);
+    }
+    if !args[1].ends_with(".asm") {
+        eprintln!("The file {} is not a supported file", args[1]);
+        std::process::exit(1);
+    }
+    let file_name = args[1].to_owned();
+    let file = File::open(&file_name)?;
+    let reader: BufReader<File> = BufReader::new(file);
+    Ok((file_name, reader))
+}
+
 fn parser(line: String) -> Option<Instruction> {
+    // Ignore comments and empty lines
     if line.starts_with("//") || line.is_empty() {
         None
+    // Parse addressing instructions
     } else if line.starts_with('@') {
         Some(Instruction::Addressing(
             line.trim_start_matches('@').to_string(),
         ))
+    // Parse labeling instructions
     } else if line.starts_with('(') && line.ends_with(')') {
         Some(Instruction::Labeling(
             line.trim_start_matches('(')
                 .trim_end_matches(')')
                 .to_string(),
         ))
+    // Parse computing instructions
     } else {
         let copy = &line.as_str();
         let (dest, copy) = copy
@@ -199,8 +218,8 @@ fn to_binary(
     ]);
 
     match instruction {
-        Instruction::Addressing(name) => match name.parse::<u16>() {
-            Ok(number) => {
+        Instruction::Addressing(name) => {
+            if let Ok(number) = name.parse::<u16>() {
                 if number > MAX_ADDRESS {
                     let address = symbol_table.get(name.as_str()).cloned().unwrap_or_else(|| {
                         let new_address = VARIABLE_ADDRESS_START + symbol_table.len() as u16;
@@ -211,8 +230,7 @@ fn to_binary(
                 } else {
                     Some(format!("0{:015b}", number))
                 }
-            }
-            _ => {
+            } else {
                 let address = default_symbols_table
                     .get(name.as_str())
                     .or(label_table.get(name))
@@ -225,7 +243,7 @@ fn to_binary(
                     });
                 Some(format!("0{:015b}", address))
             }
-        },
+        }
         Instruction::Computing(dest, comp, jump) => {
             let comp_binary = comp_table.get(comp.as_str()).unwrap_or(&"0000000");
             let dest_binary = dest_table.get(dest.as_str()).unwrap_or(&"000");
